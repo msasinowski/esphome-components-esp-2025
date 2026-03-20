@@ -1,4 +1,28 @@
-# Szczepan's esphome custom components
+# In theory it should fix a problems with version_4 and new ESP Home 2025.5
+```
+In file included from src/esphome/components/web_server_base/web_server_base.h:11,
+                 from src/esphome/components/captive_portal/captive_portal.h:11,
+                 from src/esphome/components/wmbus/wmbus.cpp:13:
+.piolibdeps/water-meter-home/ESPAsyncWebServer-esphome/src/ESPAsyncWebServer.h:280:68: warning: 'warning_x' attribute directive ignored [-Wattributes]
+     const String& ASYNCWEBSERVER_REGEX_ATTRIBUTE pathArg(size_t i) const;
+                                                                    ^~~~~
+src/esphome/components/wmbus/wmbus.cpp:18:48: note: #pragma message: Loop task stack increased.
+ #pragma message ( "Loop task stack increased." )
+                                                ^
+src/esphome/components/wmbus/wmbus.cpp: In member function 'virtual void esphome::wmbus::WMBusComponent::loop()':
+src/esphome/components/wmbus/wmbus.cpp:145:42: error: 'class esphome::sensor::Sensor' has no member named 'get_unit_of_measurement_ref'; did you mean 'get_unit_of_measurement'?
+                   else if (field.second->get_unit_of_measurement_ref().empty()) {
+                                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+                                          get_unit_of_measurement
+src/esphome/components/wmbus/wmbus.cpp:149:60: error: 'class esphome::sensor::Sensor' has no member named 'get_unit_of_measurement_ref'; did you mean 'get_unit_of_measurement'?
+                     Unit field_unit = toUnit(field.second->get_unit_of_measurement_ref());
+                                                            ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+                                                            get_unit_of_measurement
+Compiling .pioenvs/water-meter-home/src/esphome/core/component.cpp.o
+* [.pioenvs/water-meter-home/src/esphome/components/wmbus/wmbus.cpp.o] Error 1
+```
+
+## Szczepan's esphome custom components
 
 This repository contains a collection of my custom components
 for [ESPHome](https://esphome.io/).
