@@ -1,13 +1,9 @@
 #include "wmbus.h"
 #include "version.h"
-
 #include "meters.h"
-
 #include "address.h"
-
 #include "esphome/core/application.h"
 #include "esphome/core/helpers.h"
-
 
 #ifdef USE_CAPTIVE_PORTAL
 #include "esphome/components/captive_portal/captive_portal.h"
@@ -71,12 +67,11 @@ namespace wmbus {
         uint32_t meter_id = (uint32_t)strtoul(t.addresses[0].id.c_str(), nullptr, 16);
         bool meter_in_config = (this->wmbus_listeners_.count(meter_id) == 1) ? true : false;
         
-        if (this->log_all_ || meter_in_config) { //No need to do sth if logging is disabled and meter is not configured
+        if (this->log_all_ || meter_in_config) {
 
           auto detected_drv_info      = pickMeterDriver(&t);
           std::string detected_driver = (detected_drv_info.name().str().empty() ? "" : detected_drv_info.name().str().c_str());
 
-          //If the driver was explicitly stated in meter config, use that driver instead on detected one
           auto used_drv_info      = detected_drv_info;
           std::string used_driver = detected_driver;
           if (meter_in_config) {
@@ -142,7 +137,7 @@ namespace wmbus {
                   if (field_name == "rssi") {
                     field.second->publish_state(mbus_data.rssi);
                   }
-                  else if (field.second->get_unit_of_measurement.empty()) {
+                  else if (field.second->get_unit_of_measurement().empty()) {
                     ESP_LOGW(TAG, "Fields without unit not supported as sensor, please switch to text_sensor.");
                   }
                   else {
@@ -194,9 +189,6 @@ namespace wmbus {
               }
             }
           }
-          else {
-            // meter not in config
-          }
         }
       }
 # if defined(USE_WMBUS_MQTT) || defined(USE_MQTT)
@@ -235,7 +227,6 @@ namespace wmbus {
     }
   }
 
-
 #if defined(USE_WMBUS_MQTT) || defined(USE_MQTT)
   void WMBusComponent::send_mqtt_raw(Telegram &t, WMbusFrame &mbus_data) {
     bool is_parsed = !t.addresses.empty();
@@ -259,17 +250,12 @@ namespace wmbus {
       case RAW_FORMAT_RTLWMBUS: 
         char telegram_time[24];
         strftime(telegram_time, sizeof(telegram_time), "%Y-%m-%d %H:%M:%S.00Z", gmtime(&(this->frame_timestamp_)));
-
-        // Start building the payload
         payload += std::string(1, mbus_data.mode) + "1;1;1;" + telegram_time + ";" + std::to_string(mbus_data.rssi) + ";;;0x";
-
-        // Add the formatted hex frame
         for (int i = 0; i < mbus_data.frame.size(); i++) {
-          char hex_byte[3]; // 2 characters for hex + 1 for null terminator
+          char hex_byte[3];
           std::snprintf(hex_byte, sizeof(hex_byte), "%02X", mbus_data.frame[i]);
           payload += hex_byte;
         }
-
         break;
       
       default:
@@ -281,12 +267,12 @@ namespace wmbus {
         payload += "\"rssi\": " + std::to_string(mbus_data.rssi) + ", ";
         payload += "\"frame\": \"";
         for (int i = 0; i < mbus_data.frame.size(); i++) {
-          char hex_byte[3]; // 2 characters for hex + 1 for null terminator
+          char hex_byte[3];
           std::snprintf(hex_byte, sizeof(hex_byte), "%02X", mbus_data.frame[i]);
           payload += hex_byte;
         }
         payload += "\"}";
-  }
+    }
 
 #ifdef USE_WMBUS_MQTT
     if (this->mqtt_client_.connect("", this->mqtt_->name.c_str(), this->mqtt_->password.c_str())) {
@@ -311,22 +297,20 @@ namespace wmbus {
             switch (client.transport) {
               case TRANSPORT_TCP:
                 {
-                  char ip_buf[network::IP_ADDRESS_BUFFER_SIZE];
-                  ESP_LOGV(TAG, "Will send HEX telegram to %s:%d via TCP", client.ip.str(), client.port);
-                  if (this->tcp_client_.connect(client.ip.str(), client.port)) {
+                  ESP_LOGV(TAG, "Will send HEX telegram to %s:%d via TCP", client.ip.str().c_str(), client.port);
+                  if (this->tcp_client_.connect(client.ip.str().c_str(), client.port)) {
                     this->tcp_client_.write((const uint8_t *) mbus_data.frame.data(), mbus_data.frame.size());
                     this->tcp_client_.stop();
                   }
                   else {
-                    ESP_LOGE(TAG, "Can't connect via TCP to %s:%d", client.ip.str(), client.port);
+                    ESP_LOGE(TAG, "Can't connect via TCP to %s:%d", client.ip.str().c_str(), client.port);
                   }
                 }
                 break;
               case TRANSPORT_UDP:
                 {
-                  char ip_buf[network::IP_ADDRESS_BUFFER_SIZE];
-                  ESP_LOGV(TAG, "Will send HEX telegram to %s:%d via UDP",client.ip.str(), client.port);
-                  this->udp_client_.beginPacket(client.ip.str(), client.port);
+                  ESP_LOGV(TAG, "Will send HEX telegram to %s:%d via UDP",client.ip.str().c_str(), client.port);
+                  this->udp_client_.beginPacket(client.ip.str().c_str(), client.port);
                   this->udp_client_.write((const uint8_t *) mbus_data.frame.data(), mbus_data.frame.size());
                   this->udp_client_.endPacket();
                 }
@@ -344,9 +328,8 @@ namespace wmbus {
             switch (client.transport) {
               case TRANSPORT_TCP:
                 {
-                  char ip_buf[network::IP_ADDRESS_BUFFER_SIZE];
-                  ESP_LOGV(TAG, "Will send RTLWMBUS telegram to %s:%d via TCP", client.ip.str(), client.port);
-                  if (this->tcp_client_.connect(client.ip.str(), client.port)) {
+                  ESP_LOGV(TAG, "Will send RTLWMBUS telegram to %s:%d via TCP", client.ip.str().c_str(), client.port);
+                  if (this->tcp_client_.connect(client.ip.str().c_str(), client.port)) {
                     this->tcp_client_.printf("%c1;1;1;%s;%d;;;0x",
                                              mbus_data.mode,
                                              telegram_time,
@@ -358,15 +341,14 @@ namespace wmbus {
                     this->tcp_client_.stop();
                   }
                   else {
-                    ESP_LOGE(TAG, "Can't connect via TCP to %s:%d", client.ip.str(), client.port);
+                    ESP_LOGE(TAG, "Can't connect via TCP to %s:%d", client.ip.str().c_str(), client.port);
                   }
                 }
                 break;
               case TRANSPORT_UDP:
                 {
-                  char ip_buf[network::IP_ADDRESS_BUFFER_SIZE];
-                  ESP_LOGV(TAG, "Will send RTLWMBUS telegram to %s:%d via UDP", client.ip.str(), client.port);
-                  this->udp_client_.beginPacket(client.ip.str(), client.port);
+                  ESP_LOGV(TAG, "Will send RTLWMBUS telegram to %s:%d via UDP", client.ip.str().c_str(), client.port);
+                  this->udp_client_.beginPacket(client.ip.str().c_str(), client.port);
                   this->udp_client_.printf("%c1;1;1;%s;%d;;;0x",
                                            mbus_data.mode,
                                            telegram_time,
@@ -418,10 +400,9 @@ namespace wmbus {
     if (this->clients_.size() > 0) {
       ESP_LOGCONFIG(TAG, "  Clients:");
       for (auto & client : this->clients_) {
-        char ip_buf[network::IP_ADDRESS_BUFFER_SIZE];
         ESP_LOGCONFIG(TAG, "    %s: %s:%d %s [%s]",
                       client.name.c_str(),
-                      client.ip.str(),
+                      client.ip.str().c_str(),
                       client.port,
                       LOG_STR_ARG(transport_to_string(client.transport)),
                       LOG_STR_ARG(format_to_string(client.format)));
@@ -438,7 +419,7 @@ namespace wmbus {
     ESP_LOGCONFIG(TAG, "  CC1101 frequency: %3.3f MHz", this->frequency_);
     ESP_LOGCONFIG(TAG, "  CC1101 SPI bus:");
     if (this->is_failed()) {
-      ESP_LOGE(TAG, "   Check connection to CC1101!");
+      ESP_LOGE(TAG, "    Check connection to CC1101!");
     }
     LOG_PIN("    MOSI Pin: ", this->spi_conf_.mosi);
     LOG_PIN("    MISO Pin: ", this->spi_conf_.miso);
@@ -457,18 +438,16 @@ namespace wmbus {
     }
   }
 
-  ///////////////////////////////////////
-
   void WMBusListener::dump_config() {
-    std::string key = format_hex_pretty(this->key);
-    key.erase(std::remove(key.begin(), key.end(), '.'), key.end());
-    if (key.size()) {
-      key.erase(key.size() - 5);
+    std::string key_str = format_hex_pretty(this->key);
+    key_str.erase(std::remove(key_str.begin(), key_str.end(), '.'), key_str.end());
+    if (key_str.size()) {
+      key_str.erase(key_str.size() - 5);
     }
     ESP_LOGCONFIG(TAG, "  Meter:");
     ESP_LOGCONFIG(TAG, "    ID: %zu [0x%08X]", this->id, this->id);
     ESP_LOGCONFIG(TAG, "    Type: %s", ((this->type).empty() ? "auto detect" : this->type.c_str()));
-    ESP_LOGCONFIG(TAG, "    Key: '%s'", key.c_str());
+    ESP_LOGCONFIG(TAG, "    Key: '%s'", key_str.c_str());
     for (const auto &ele : this->fields) {
       ESP_LOGCONFIG(TAG, "    Field: '%s'", ele.first.first.c_str());
       LOG_SENSOR("     ", "Name:", ele.second);
@@ -483,29 +462,20 @@ namespace wmbus {
     this->id = id;
     this->type = type;
     this->myKey = key;
-    hex_to_bin(key, &(this->key));
+    hex_to_bin(key.c_str(), &(this->key));
   }
 
-  int WMBusListener::char_to_int(char input)
-  {
-    if(input >= '0' && input <= '9') {
-      return input - '0';
-    }
-    if(input >= 'A' && input <= 'F') {
-      return input - 'A' + 10;
-    }
-    if(input >= 'a' && input <= 'f') {
-      return input - 'a' + 10;
-    }
+  int WMBusListener::char_to_int(char input) {
+    if(input >= '0' && input <= '9') return input - '0';
+    if(input >= 'A' && input <= 'F') return input - 'A' + 10;
+    if(input >= 'a' && input <= 'f') return input - 'a' + 10;
     return -1;
   }
 
-  bool WMBusListener::hex_to_bin(const char* src, std::vector<unsigned char> *target)
-  {
+  bool WMBusListener::hex_to_bin(const char* src, std::vector<unsigned char> *target) {
     if (!src) return false;
     while(*src && src[1]) {
       if (*src == ' ' || *src == '#' || *src == '|' || *src == '_') {
-        // Ignore space and hashes and pipes and underlines.
         src++;
       }
       else {
