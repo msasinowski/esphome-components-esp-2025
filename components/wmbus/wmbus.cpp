@@ -146,6 +146,19 @@ namespace wmbus {
               
               if (id_match) {
                 ESP_LOGI(TAG, "Decoding successful for 0x%08X", meter_id);
+
+                // --- DODANY LOG DIAGNOSTYCZNY ---
+                ESP_LOGI(TAG, "--- START OF DECODED FIELDS ---");
+                for (auto const& res : meter->getValues()) {
+                    std::string f_name = res.first;
+                    double f_val = res.second.getNumericValue();
+                    std::string f_unit = unitToString(res.second.getUnit());
+                    ESP_LOGI(TAG, " > Field Name: '%s' | Value: %.3f | Unit: %s", 
+                             f_name.c_str(), f_val, f_unit.c_str());
+                }
+                ESP_LOGI(TAG, "--- END OF DECODED FIELDS ---");
+                // --------------------------------
+
                 for (auto const& field : sensor->fields) {
                   std::string field_name = field.first.first;
                   std::string unit = field.first.second;
@@ -331,7 +344,7 @@ namespace wmbus {
                 {
                   if (this->tcp_client_.connect(client.ip.str().c_str(), client.port)) {
                     this->tcp_client_.printf("%c1;1;1;%s;%d;;;0x", mbus_data.mode, telegram_time, mbus_data.rssi);
-                    for (int i = 0; i < mbus_data.frame.size(); i++) {
+                    for (int i = 0; i < (int)mbus_data.frame.size(); i++) {
                       this->tcp_client_.printf("%02X", mbus_data.frame[i]);
                     }
                     this->tcp_client_.print("\n");
@@ -343,7 +356,7 @@ namespace wmbus {
                 {
                   this->udp_client_.beginPacket(client.ip.str().c_str(), client.port);
                   this->udp_client_.printf("%c1;1;1;%s;%d;;;0x", mbus_data.mode, telegram_time, mbus_data.rssi);
-                  for (int i = 0; i < mbus_data.frame.size(); i++) {
+                  for (int i = 0; i < (int)mbus_data.frame.size(); i++) {
                     this->udp_client_.printf("%02X", mbus_data.frame[i]);
                   }
                   this->udp_client_.print("\n");
