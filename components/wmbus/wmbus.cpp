@@ -59,7 +59,6 @@ namespace wmbus {
 
       this->frame_timestamp_ = this->time_->timestamp_now();
       
-      // LOG: Raw frame reception for debugging
       ESP_LOGD(TAG, "Raw frame received (%c): %s", mbus_data.mode, telegram.c_str());
 
       send_to_clients(mbus_data);
@@ -127,7 +126,6 @@ namespace wmbus {
             else {
               auto *sensor = this->wmbus_listeners_[meter_id];
               
-              // Key logic: Force 32 zeros if key is missing or "0"
               std::string key_to_use = sensor->myKey;
               if (key_to_use.empty() || key_to_use == "0") {
                   key_to_use = "00000000000000000000000000000000";
@@ -141,23 +139,23 @@ namespace wmbus {
               std::vector<Address> addresses;
               AboutTelegram about{"ESPHome wM-Bus", mbus_data.rssi, FrameType::WMBUS, this->frame_timestamp_};
               
-              ESP_LOGD(TAG, "Attempting decryption with driver %s...", used_driver.c_str());
               meter->handleTelegram(about, mbus_data.frame, false, &addresses, &id_match, &t);
               
               if (id_match) {
                 ESP_LOGI(TAG, "Decoding successful for 0x%08X", meter_id);
 
-                // --- DODANY LOG DIAGNOSTYCZNY (POPRAWIONY) ---
+                // --- DIAGNOSTYKA POL (ZABEZPIECZONA PRZED BŁĘDEM TYPU) ---
                 ESP_LOGI(TAG, "--- START OF DECODED FIELDS ---");
-                for (auto const& res : meter->debugValues()) {
-                    std::string f_name = res.first;
-                    double f_val = res.second.getNumericValue();
-                    std::string f_unit = unitToStringHR(res.second.getUnit());
-                    ESP_LOGI(TAG, " > Field Name: '%s' | Value: %.3f | Unit: %s", 
+                auto decoded_fields = meter->debugValues();
+                for (auto const& field : decoded_fields) {
+                    // Wyciągamy dane używając jawnych metod dla iteratora
+                    std::string f_name = field.first;
+                    double f_val = field.second.getNumericValue();
+                    std::string f_unit = unitToStringHR(field.second.getUnit());
+                    ESP_LOGI(TAG, " > Field: '%s' | Value: %.3f | Unit: %s", 
                              f_name.c_str(), f_val, f_unit.c_str());
                 }
                 ESP_LOGI(TAG, "--- END OF DECODED FIELDS ---");
-                // --------------------------------
 
                 for (auto const& field : sensor->fields) {
                   std::string field_name = field.first.first;
