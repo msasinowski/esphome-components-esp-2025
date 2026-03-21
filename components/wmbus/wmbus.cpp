@@ -59,7 +59,7 @@ namespace wmbus {
 
       this->frame_timestamp_ = this->time_->timestamp_now();
       
-      // LOG 1: Raw frame reception
+      // LOG: Raw frame reception for debugging
       ESP_LOGD(TAG, "Raw frame received (%c): %s", mbus_data.mode, telegram.c_str());
 
       send_to_clients(mbus_data);
@@ -127,7 +127,7 @@ namespace wmbus {
             else {
               auto *sensor = this->wmbus_listeners_[meter_id];
               
-              // LOG 2: Check key and force zero-key if needed
+              // Key logic: Force 32 zeros if key is missing or "0"
               std::string key_to_use = sensor->myKey;
               if (key_to_use.empty() || key_to_use == "0") {
                   key_to_use = "00000000000000000000000000000000";
@@ -141,7 +141,6 @@ namespace wmbus {
               std::vector<Address> addresses;
               AboutTelegram about{"ESPHome wM-Bus", mbus_data.rssi, FrameType::WMBUS, this->frame_timestamp_};
               
-              // LOG 3: Pre-decoding attempt
               ESP_LOGD(TAG, "Attempting decryption with driver %s...", used_driver.c_str());
               meter->handleTelegram(about, mbus_data.frame, false, &addresses, &id_match, &t);
               
@@ -165,8 +164,7 @@ namespace wmbus {
                         field.second->publish_state(value);
                       }
                       else {
-                        // LOG 4: NaN Troubleshooting
-                        ESP_LOGW(TAG, "Field '%s' returned NaN! Check if field exists in driver and if key is correct.", field_name.c_str());
+                        ESP_LOGW(TAG, "Field '%s' returned NaN! Check field name and AES key.", field_name.c_str());
                       }
                     }
                     else {
@@ -189,11 +187,7 @@ namespace wmbus {
                 std::string mqtt_topic = (App.get_friendly_name().empty() ? App.get_name() : App.get_friendly_name()) + "/wmbus/" + t.addresses[0].id;
                 if (this->mqtt_client_.connect("", this->mqtt_->name.c_str(), this->mqtt_->password.c_str())) {
                   this->mqtt_client_.publish(mqtt_topic.c_str(), json.c_str(), this->mqtt_->retained);
-                  ESP_LOGV(TAG, "Publish(topic='%s' payload='%s' retain=%d)", mqtt_topic.c_str(), json.c_str(), this->mqtt_->retained);
                   this->mqtt_client_.disconnect();
-                }
-                else {
-                  ESP_LOGV(TAG, "Publish failed for topic='%s' (len=%u).", mqtt_topic.c_str(), json.length());
                 }
 #elif defined(USE_MQTT)
                 std::string json;
@@ -203,7 +197,6 @@ namespace wmbus {
 #endif
               }
               else {
-                // LOG 5: Failure
                 ESP_LOGE(TAG, "Decryption/ID match failed for 0x%08X. Incorrect AES key?", meter_id);
               }
             }
@@ -296,11 +289,7 @@ namespace wmbus {
 #ifdef USE_WMBUS_MQTT
     if (this->mqtt_client_.connect("", this->mqtt_->name.c_str(), this->mqtt_->password.c_str())) {
       this->mqtt_client_.publish(mqtt_topic.c_str(), payload.c_str(), this->mqtt_->retained);
-      ESP_LOGV(TAG, "Publishing raw(topic='%s' payload='%s' retain=%d)", mqtt_topic.c_str(), payload.c_str(), this->mqtt_->retained);
       this->mqtt_client_.disconnect();
-    }
-    else {
-      ESP_LOGV(TAG, "Publish failed raw for topic='%s' (len=%u).", mqtt_topic.c_str(), payload.length());
     }
 #elif defined(USE_MQTT)
     this->mqtt_client_->publish(mqtt_topic, payload);
@@ -311,4 +300,142 @@ namespace wmbus {
   void WMBusComponent::send_to_clients(WMbusFrame &mbus_data) {
     for (auto & client : this->clients_) {
       switch (client.format) {
-        case
+        case FORMAT_HEX:
+          {
+            switch (client.transport) {
+              case TRANSPORT_TCP:
+                {
+                  if (this->tcp_client_.connect(client.ip.str().c_str(), client.port)) {
+                    this->tcp_client_.write((const uint8_t *) mbus_data.frame.data(), mbus_data.frame.size());
+                    this->tcp_client_.stop();
+                  }
+                }
+                break;
+              case TRANSPORT_UDP:
+                {
+                  this->udp_client_.beginPacket(client.ip.str().c_str(), client.port);
+                  this->udp_client_.write((const uint8_t *) mbus_data.frame.data(), mbus_data.frame.size());
+                  this->udp_client_.endPacket();
+                }
+                break;
+              default: break;
+            }
+          }
+          break;
+        case FORMAT_RTLWMBUS:
+          {
+            char telegram_time[24];
+            strftime(telegram_time, sizeof(telegram_time), "%Y-%m-%d %H:%M:%S.00Z", gmtime(&(this->frame_timestamp_)));
+            switch (client.transport) {
+              case TRANSPORT_TCP:
+                {
+                  if (this->tcp_client_.connect(client.ip.str().c_str(), client.port)) {
+                    this->tcp_client_.printf("%c1;1;1;%s;%d;;;0x", mbus_data.mode, telegram_time, mbus_data.rssi);
+                    for (int i = 0; i < mbus_data.frame.size(); i++) {
+                      this->tcp_client_.printf("%02X", mbus_data.frame[i]);
+                    }
+                    this->tcp_client_.print("\n");
+                    this->tcp_client_.stop();
+                  }
+                }
+                break;
+              case TRANSPORT_UDP:
+                {
+                  this->udp_client_.beginPacket(client.ip.str().c_str(), client.port);
+                  this->udp_client_.printf("%c1;1;1;%s;%d;;;0x", mbus_data.mode, telegram_time, mbus_data.rssi);
+                  for (int i = 0; i < mbus_data.frame.size(); i++) {
+                    this->udp_client_.printf("%02X", mbus_data.frame[i]);
+                  }
+                  this->udp_client_.print("\n");
+                  this->udp_client_.endPacket();
+                }
+                break;
+              default: break;
+            }
+          }
+          break;
+        default: break;
+      }
+    }
+  }
+
+  const LogString *WMBusComponent::format_to_string(Format format) {
+    switch (format) {
+      case FORMAT_HEX: return LOG_STR("hex");
+      case FORMAT_RTLWMBUS: return LOG_STR("rtl-wmbus");
+      default: return LOG_STR("unknown");
+    }
+  }
+
+  const LogString *WMBusComponent::transport_to_string(Transport transport) {
+    switch (transport) {
+      case TRANSPORT_TCP: return LOG_STR("TCP");
+      case TRANSPORT_UDP: return LOG_STR("UDP");
+      default: return LOG_STR("unknown");
+    }
+  }
+
+  void WMBusComponent::dump_config() {
+    ESP_LOGCONFIG(TAG, "wM-Bus v%s-%s:", MY_VERSION, WMBUSMETERS_VERSION);
+    if (this->clients_.size() > 0) {
+      for (auto & client : this->clients_) {
+        ESP_LOGCONFIG(TAG, "    %s: %s:%d %s [%s]", client.name.c_str(), client.ip.str().c_str(), client.port, LOG_STR_ARG(transport_to_string(client.transport)), LOG_STR_ARG(format_to_string(client.format)));
+      }
+    }
+    if (this->led_pin_ != nullptr) {
+      LOG_PIN("    LED Pin: ", this->led_pin_);
+    }
+#ifdef USE_ESP32
+    ESP_LOGCONFIG(TAG, "    Chip ID: %012llX", ESP.getEfuseMac());
+#endif
+    ESP_LOGCONFIG(TAG, "    CC1101 frequency: %3.3f MHz", this->frequency_);
+    LOG_PIN("    MOSI Pin: ", this->spi_conf_.mosi);
+    LOG_PIN("    MISO Pin: ", this->spi_conf_.miso);
+    LOG_PIN("    CLK Pin:  ", this->spi_conf_.clk);
+    LOG_PIN("    CS Pin:   ", this->spi_conf_.cs);
+    LOG_PIN("    GDO0 Pin: ", this->spi_conf_.gdo0);
+    LOG_PIN("    GDO2 Pin: ", this->spi_conf_.gdo2);
+    for (const auto &ele : this->wmbus_listeners_) {
+      ele.second->dump_config();
+    }
+  }
+
+  void WMBusListener::dump_config() {
+    std::string key_str = format_hex_pretty(this->key);
+    key_str.erase(std::remove(key_str.begin(), key_str.end(), '.'), key_str.end());
+    ESP_LOGCONFIG(TAG, "  Meter ID: 0x%08X Type: %s", this->id, ((this->type).empty() ? "auto detect" : this->type.c_str()));
+  }
+
+  WMBusListener::WMBusListener(const uint32_t id, const std::string type, const std::string key) {
+    this->id = id;
+    this->type = type;
+    this->myKey = key;
+    hex_to_bin(key.c_str(), &(this->key));
+  }
+
+  int WMBusListener::char_to_int(char input) {
+    if(input >= '0' && input <= '9') return input - '0';
+    if(input >= 'A' && input <= 'F') return input - 'A' + 10;
+    if(input >= 'a' && input <= 'f') return input - 'a' + 10;
+    return -1;
+  }
+
+  bool WMBusListener::hex_to_bin(const char* src, std::vector<unsigned char> *target) {
+    if (!src) return false;
+    while(*src && src[1]) {
+      if (*src == ' ' || *src == '#' || *src == '|' || *src == '_') {
+        src++;
+      }
+      else {
+        int hi = char_to_int(*src);
+        int lo = char_to_int(src[1]);
+        if (hi<0 || lo<0) return false;
+        target->push_back(hi*16 + lo);
+        src += 2;
+      }
+    }
+    return true;
+  }
+
+}  // namespace wmbus
+}  // namespace esphome
