@@ -144,18 +144,11 @@ namespace wmbus {
               if (id_match) {
                 ESP_LOGI(TAG, "Decoding successful for 0x%08X", meter_id);
 
-                // --- DIAGNOSTYKA POL (ZABEZPIECZONA PRZED BŁĘDEM TYPU) ---
-                ESP_LOGI(TAG, "--- START OF DECODED FIELDS ---");
-                auto decoded_fields = meter->debugValues();
-                for (auto const& field : decoded_fields) {
-                    // Wyciągamy dane używając jawnych metod dla iteratora
-                    std::string f_name = field.first;
-                    double f_val = field.second.getNumericValue();
-                    std::string f_unit = unitToStringHR(field.second.getUnit());
-                    ESP_LOGI(TAG, " > Field: '%s' | Value: %.3f | Unit: %s", 
-                             f_name.c_str(), f_val, f_unit.c_str());
-                }
-                ESP_LOGI(TAG, "--- END OF DECODED FIELDS ---");
+                // --- POPRAWIONA DIAGNOSTYKA (Wersja dla string debugValues()) ---
+                std::string debug_output = meter->debugValues();
+                ESP_LOGI(TAG, "--- START OF DECODED DATA ---");
+                ESP_LOGI(TAG, "%s", debug_output.c_str());
+                ESP_LOGI(TAG, "--- END OF DECODED DATA ---");
 
                 for (auto const& field : sensor->fields) {
                   std::string field_name = field.first.first;
@@ -412,8 +405,6 @@ namespace wmbus {
   }
 
   void WMBusListener::dump_config() {
-    std::string key_str = format_hex_pretty(this->key);
-    key_str.erase(std::remove(key_str.begin(), key_str.end(), '.'), key_str.end());
     ESP_LOGCONFIG(TAG, "  Meter ID: 0x%08X Type: %s", this->id, ((this->type).empty() ? "auto detect" : this->type.c_str()));
   }
 
