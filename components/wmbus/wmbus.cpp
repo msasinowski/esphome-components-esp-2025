@@ -147,12 +147,12 @@ namespace wmbus {
               if (id_match) {
                 ESP_LOGI(TAG, "Decoding successful for 0x%08X", meter_id);
 
-                // --- DODANY LOG DIAGNOSTYCZNY ---
+                // --- DODANY LOG DIAGNOSTYCZNY (POPRAWIONY) ---
                 ESP_LOGI(TAG, "--- START OF DECODED FIELDS ---");
-                for (auto const& res : meter->getValues()) {
+                for (auto const& res : meter->debugValues()) {
                     std::string f_name = res.first;
                     double f_val = res.second.getNumericValue();
-                    std::string f_unit = unitToString(res.second.getUnit());
+                    std::string f_unit = unitToStringHR(res.second.getUnit());
                     ESP_LOGI(TAG, " > Field Name: '%s' | Value: %.3f | Unit: %s", 
                              f_name.c_str(), f_val, f_unit.c_str());
                 }
@@ -276,7 +276,7 @@ namespace wmbus {
         char telegram_time[24];
         strftime(telegram_time, sizeof(telegram_time), "%Y-%m-%d %H:%M:%S.00Z", gmtime(&(this->frame_timestamp_)));
         payload += std::string(1, mbus_data.mode) + "1;1;1;" + telegram_time + ";" + std::to_string(mbus_data.rssi) + ";;;0x";
-        for (int i = 0; i < mbus_data.frame.size(); i++) {
+        for (int i = 0; i < (int)mbus_data.frame.size(); i++) {
           char hex_byte[3];
           std::snprintf(hex_byte, sizeof(hex_byte), "%02X", mbus_data.frame[i]);
           payload += hex_byte;
@@ -291,7 +291,7 @@ namespace wmbus {
         payload += "\"mode\": \"" + std::string(1, mbus_data.mode) + "\", ";
         payload += "\"rssi\": " + std::to_string(mbus_data.rssi) + ", ";
         payload += "\"frame\": \"";
-        for (int i = 0; i < mbus_data.frame.size(); i++) {
+        for (int i = 0; i < (int)mbus_data.frame.size(); i++) {
           char hex_byte[3];
           std::snprintf(hex_byte, sizeof(hex_byte), "%02X", mbus_data.frame[i]);
           payload += hex_byte;
